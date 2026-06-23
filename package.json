@@ -17,6 +17,9 @@
     "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.3",
     "moment": "^2.30.1",
-    "mongoose": "^9.7.2"
+    "mongoose": "^8.4.0"
+  },
+  "overrides": {
+    "bson": "6.7.0"
   }
 }
