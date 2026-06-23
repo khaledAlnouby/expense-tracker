@@ -1,11 +1,27 @@
 const Expense = require('../models/expense.model');
+const { Parser } = require('json2csv');
 
 // @desc    Get expenses
 // @route   GET /api/expenses
 // @access  Private
 const getExpenses = async (req, res, next) => {
   try {
-    const expenses = await Expense.find({ user: req.user.id }).sort({ date: -1 });
+    const { category, minAmount, maxAmount, startDate, endDate } = req.query;
+    let query = { user: req.user.id };
+
+    if (category) query.category = category;
+    if (minAmount || maxAmount) {
+      query.amount = {};
+      if (minAmount) query.amount.$gte = Number(minAmount);
+      if (maxAmount) query.amount.$lte = Number(maxAmount);
+    }
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = new Date(startDate);
+      if (endDate) query.date.$lte = new Date(endDate);
+    }
+
+    const expenses = await Expense.find(query).sort({ date: -1 });
     res.status(200).json(expenses);
   } catch (error) {
     next(error);
@@ -107,9 +123,67 @@ const deleteExpense = async (req, res, next) => {
   }
 };
 
+// @desc    Get monthly expense summary
+// @route   GET /api/expenses/summary
+// @access  Private
+const getExpenseSummary = async (req, res, next) => {
+  try {
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1; // 1-12
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    const summary = await Expense.aggregate([
+      {
+        $match: {
+          user: req.user._id,
+          date: { $gte: startDate, $lte: endDate },
+        },
+      },
+      {
+        $group: {
+          _id: '$category',
+          totalAmount: { $sum: '$amount' },
+        },
+      },
+    ]);
+
+    res.status(200).json(summary);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Export expenses to CSV
+// @route   GET /api/expenses/export
+// @access  Private
+const exportExpenses = async (req, res, next) => {
+  try {
+    const expenses = await Expense.find({ user: req.user.id }).lean();
+    
+    if (!expenses.length) {
+      res.status(404);
+      throw new Error('No expenses to export');
+    }
+
+    const fields = ['title', 'amount', 'category', 'date', 'description'];
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(expenses);
+
+    res.header('Content-Type', 'text/csv');
+    res.attachment('expenses.csv');
+    return res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getExpenses,
   setExpense,
   updateExpense,
   deleteExpense,
+  getExpenseSummary,
+  exportExpenses,
 };
